@@ -6,6 +6,9 @@ import math
 import re
 
 
+FUTUROS_COMPROMISOS_DESC = "Compromisos futuros anualizados según lo declarado"
+
+
 def _to_float(v: Any) -> float:
     """
     Convierte números que puedan venir como:
@@ -63,15 +66,13 @@ def _to_float(v: Any) -> float:
 
             if candidate.count(".") > 1:
                 parts = candidate.split(".")
-                if not parts[-1].isdigit():
-                    return 0.0
+                decimal_part = parts[-1]
                 head = "".join(parts[:-1])
-                if head.startswith("-"):
-                    if not head[1:].isdigit():
-                        return 0.0
-                elif not head.isdigit():
+                sign = "-" if head.startswith("-") else ""
+                head_digits = re.sub(r"\D", "", head.lstrip("-"))
+                if not decimal_part.isdigit() or not head_digits:
                     return 0.0
-                candidate = head + "." + parts[-1]
+                candidate = sign + head_digits + "." + decimal_part
 
             try:
                 return float(candidate)
@@ -148,6 +149,7 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
         credito_mensual = 0.0
 
     # futuros compromisos (normalización única: anual > mensual*12 > 0)
+    # prioridad: futuros_compromisos_anual (nuevo) sobre futuros_compromisos_total_anual (legado)
     futuros_total_anual = _get(economico, "futuros_compromisos_anual", "futuros_compromisos_total_anual")
     futuros_mensual = _get(economico, "futuros_compromisos_mensual")
 
@@ -255,7 +257,7 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
             "prestaciones_totales": _fmt_money_es(prestaciones_totales_mensuales),
             "ingresos_globales": _fmt_money_es(ingresos_globales_mensuales),
             "egresos_globales": _fmt_money_es(egresos_globales_mensuales),
-            "futuros_compromisos": "Compromisos futuros anualizados según lo declarado",
+            "futuros_compromisos": FUTUROS_COMPROMISOS_DESC,
             "futuros_compromisos_total": f"{_fmt_money_es(futuros_total_anual)} (anual)",
             "credito_mensual": _fmt_money_es(credito_mensual),
             "credito_anual": _fmt_money_es(credito_anual),
