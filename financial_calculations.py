@@ -65,14 +65,16 @@ def _to_float(v: Any) -> float:
                 candidate = candidate.replace(",", ".")
 
             if candidate.count(".") > 1:
+                # asumir el último punto como decimal y eliminar separadores previos
                 parts = candidate.split(".")
                 decimal_part = parts[-1]
                 head = "".join(parts[:-1])
                 sign = "-" if head.startswith("-") else ""
                 head_digits = re.sub(r"\D", "", head.lstrip("-"))
-                if not decimal_part.isdigit() or not head_digits:
+                if not decimal_part.isdigit():
                     return 0.0
-                candidate = sign + head_digits + "." + decimal_part
+                integer_part = head_digits or "0"
+                candidate = f"{sign}{integer_part}.{decimal_part}"
 
             try:
                 return float(candidate)
