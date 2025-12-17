@@ -9,6 +9,36 @@ import re
 FUTUROS_COMPROMISOS_DESC = "Compromisos futuros anualizados según lo declarado"
 
 
+def _parse_numeric_fragment(fragment: str) -> float:
+    """
+    Intenta parsear un fragmento numérico que puede contener separadores de miles y texto alrededor.
+    """
+    candidate = fragment.rstrip(".,")
+    if "." in candidate and "," in candidate:
+        if candidate.rfind(",") > candidate.rfind("."):
+            candidate = candidate.replace(".", "")
+            candidate = candidate.replace(",", ".")
+        else:
+            candidate = candidate.replace(",", "")
+    else:
+        candidate = candidate.replace(",", ".")
+
+    if candidate.count(".") > 1:
+        # asumir el último punto como decimal y eliminar separadores previos
+        parts = candidate.split(".")
+        decimal_part = parts[-1]
+        head = "".join(parts[:-1])
+        sign = "-" if head.startswith("-") else ""
+        head_digits = re.sub(r"\D", "", head.lstrip("-"))
+        integer_part = head_digits or "0"
+        candidate = f"{sign}{integer_part}.{decimal_part}"
+
+    try:
+        return float(candidate)
+    except Exception:
+        return 0.0
+
+
 def _to_float(v: Any) -> float:
     """
     Convierte números que puedan venir como:
@@ -53,33 +83,7 @@ def _to_float(v: Any) -> float:
     except Exception:
         match = re.search(r"-?\d[\d.,]*", s)
         if match:
-            candidate = match.group().rstrip(".,")
-            if "." in candidate and "," in candidate:
-                # elegir el último separador como decimal
-                if candidate.rfind(",") > candidate.rfind("."):
-                    candidate = candidate.replace(".", "")
-                    candidate = candidate.replace(",", ".")
-                else:
-                    candidate = candidate.replace(",", "")
-            else:
-                candidate = candidate.replace(",", ".")
-
-            if candidate.count(".") > 1:
-                # asumir el último punto como decimal y eliminar separadores previos
-                parts = candidate.split(".")
-                decimal_part = parts[-1]
-                head = "".join(parts[:-1])
-                sign = "-" if head.startswith("-") else ""
-                head_digits = re.sub(r"\D", "", head.lstrip("-"))
-                if not decimal_part.isdigit():
-                    return 0.0
-                integer_part = head_digits or "0"
-                candidate = f"{sign}{integer_part}.{decimal_part}"
-
-            try:
-                return float(candidate)
-            except Exception:
-                return 0.0
+            return _parse_numeric_fragment(match.group())
         return 0.0
 
 
