@@ -39,7 +39,7 @@ def compute(payload: ComputeRequest, x_api_key: Optional[str] = Header(default=N
     if isinstance(datos_crudos_normalizado, str):
         try:
             datos_crudos_normalizado = json.loads(datos_crudos_normalizado)
-        except Exception:
+        except json.JSONDecodeError:
             raise HTTPException(status_code=400, detail="datos_crudos inválido: JSON malformado")
 
     if not isinstance(datos_crudos_normalizado, dict) or not datos_crudos_normalizado:
