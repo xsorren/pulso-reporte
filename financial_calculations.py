@@ -50,7 +50,7 @@ def _to_float(v: Any) -> float:
     except Exception:
         match = re.search(r"-?\d[\d.,]*", s)
         if match:
-            candidate = match.group().strip(".,")
+            candidate = match.group().rstrip(".,")
             if "." in candidate and "," in candidate:
                 # elegir el último separador como decimal
                 if candidate.rfind(",") > candidate.rfind("."):
@@ -63,7 +63,15 @@ def _to_float(v: Any) -> float:
 
             if candidate.count(".") > 1:
                 parts = candidate.split(".")
-                candidate = "".join(parts[:-1]) + "." + parts[-1]
+                if not parts[-1].isdigit():
+                    return 0.0
+                head = "".join(parts[:-1])
+                if head.startswith("-"):
+                    if not head[1:].isdigit():
+                        return 0.0
+                elif not head.isdigit():
+                    return 0.0
+                candidate = head + "." + parts[-1]
 
             try:
                 return float(candidate)
