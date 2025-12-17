@@ -34,5 +34,8 @@ def compute(payload: ComputeRequest, x_api_key: Optional[str] = Header(default=N
     if APP_API_KEY and x_api_key != APP_API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+    if not isinstance(payload.datos_crudos, dict) or not payload.datos_crudos:
+        raise HTTPException(status_code=400, detail="datos_crudos requerido")
+
     raw, formatted, notes = compute_financials(payload.datos_crudos, payload.flags or {})
     return {"raw": raw, "formatted": formatted, "notes": notes}
