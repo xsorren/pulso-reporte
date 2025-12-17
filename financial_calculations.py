@@ -6,6 +6,39 @@ import math
 import re
 
 
+FUTUROS_COMPROMISOS_DESC = "Compromisos futuros anualizados según lo declarado"
+
+
+def _parse_numeric_fragment(fragment: str) -> float:
+    """
+    Intenta parsear un fragmento numérico que puede contener separadores de miles y texto alrededor.
+    """
+    candidate = fragment.rstrip(".,")
+    if "." in candidate and "," in candidate:
+        if candidate.rfind(",") > candidate.rfind("."):
+            candidate = candidate.replace(".", "")
+            candidate = candidate.replace(",", ".")
+        else:
+            candidate = candidate.replace(",", "")
+    else:
+        candidate = candidate.replace(",", ".")
+
+    if candidate.count(".") > 1:
+        # asumir el último punto como decimal y eliminar separadores previos
+        parts = candidate.split(".")
+        decimal_part = parts[-1]
+        head = "".join(parts[:-1])
+        sign = "-" if head.startswith("-") else ""
+        head_digits = re.sub(r"\D", "", head.lstrip("-"))
+        integer_part = head_digits or "0"
+        candidate = f"{sign}{integer_part}.{decimal_part}"
+
+    try:
+        return float(candidate)
+    except Exception:
+        return 0.0
+
+
 def _to_float(v: Any) -> float:
     """
     Convierte números que puedan venir como:
@@ -48,6 +81,9 @@ def _to_float(v: Any) -> float:
     try:
         return float(s2)
     except Exception:
+        match = re.search(r"-?\d[\d.,]*", s)
+        if match:
+            return _parse_numeric_fragment(match.group())
         return 0.0
 
 
@@ -118,24 +154,13 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
             notes.append("credito_incluido_en_egresos=true: se forzó credito_mensual=0 para evitar doble conteo.")
         credito_mensual = 0.0
 
-    # futuros compromisos
-    futuros_total_anual = _get(economico, "futuros_compromisos_total_anual")
+    # futuros compromisos (normalización única: anual > mensual*12 > 0)
+    # prioridad: futuros_compromisos_anual (nuevo) sobre futuros_compromisos_total_anual (legado)
+    futuros_total_anual = _get(economico, "futuros_compromisos_anual", "futuros_compromisos_total_anual")
     futuros_mensual = _get(economico, "futuros_compromisos_mensual")
-    futuros_valor = _get(economico, "futuros_compromisos_valor")
-    futuros_freq = str((economico.get("futuros_compromisos_frecuencia") or "")).lower().strip()
 
-    if futuros_total_anual == 0.0:
-        if futuros_mensual != 0.0:
-            futuros_total_anual = futuros_mensual * 12.0
-        elif futuros_valor != 0.0:
-            # si viene con frecuencia explícita
-            if futuros_freq in ("anual", "annual", "year", "yearly"):
-                futuros_total_anual = futuros_valor
-            else:
-                # por defecto, asumir mensual
-                futuros_total_anual = futuros_valor * 12.0
-                if futuros_freq:
-                    notes.append(f"futuros_compromisos_frecuencia='{futuros_freq}' no reconocida; se asumió mensual.")
+    if futuros_total_anual == 0.0 and futuros_mensual != 0.0:
+        futuros_total_anual = futuros_mensual * 12.0
     if bool(flags.get("futuros_compromisos_incluido_en_egresos")):
         if futuros_total_anual != 0:
             notes.append("futuros_compromisos_incluido_en_egresos=true: se forzó futuros_compromisos_total_anual=0 para evitar doble conteo.")
@@ -147,6 +172,8 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
     inversiones = _get(patrimonial, "inversiones")
     sociedades_y_acciones = _get(patrimonial, "sociedades_y_acciones")
     fondo_emergencia = _get(patrimonial, "fondo_emergencia")
+    if fondo_emergencia == 0.0:
+        fondo_emergencia = _get(economico, "fondo_emergencia")
 
     seguro_vida = _get(patrimonial, "seguro_vida")
     valor_seguro_auto = _get(patrimonial, "valor_seguro_auto")
@@ -236,6 +263,7 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
             "prestaciones_totales": _fmt_money_es(prestaciones_totales_mensuales),
             "ingresos_globales": _fmt_money_es(ingresos_globales_mensuales),
             "egresos_globales": _fmt_money_es(egresos_globales_mensuales),
+            "futuros_compromisos": FUTUROS_COMPROMISOS_DESC,
             "futuros_compromisos_total": f"{_fmt_money_es(futuros_total_anual)} (anual)",
             "credito_mensual": _fmt_money_es(credito_mensual),
             "credito_anual": _fmt_money_es(credito_anual),
@@ -252,10 +280,6 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
             "activos_inmobiliarios": _fmt_money_es(activos_inmobiliarios),
             "inversiones": _fmt_money_es(inversiones),
             "sociedades_y_acciones": _fmt_money_es(sociedades_y_acciones),
-        },
-        "debug": {
-            "porc_cobertura": _fmt_percent_es(porc_cobertura),
-            "porc_emergencia": _fmt_percent_es(porc_emergencia),
         },
     }
 
