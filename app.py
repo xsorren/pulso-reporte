@@ -4,7 +4,7 @@ import os
 import json
 import ast
 import urllib.parse
-from typing import Any, Dict, Optional, Tuple, List
+from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -38,18 +38,42 @@ def health():
     return {"ok": True}
 
 
+def _maybe_unescape_whitespace(text: str) -> str:
+    """
+    Bubble a veces envía el JSON como texto con secuencias literales \n \t \r
+    fuera de strings, ej: {\\n "a": 1 } -> eso NO es JSON válido.
+    Convertimos esas secuencias a whitespace real.
+    """
+    t = (text or "").strip()
+    if not t:
+        return t
+
+    # Heurística: si arranca con "{\n" escapado o contiene \n muy temprano
+    if t.startswith("{\\n") or "\\n" in t[:200] or "\\t" in t[:200] or "\\r" in t[:200]:
+        t = (
+            t.replace("\\r\\n", "\n")
+             .replace("\\n", "\n")
+             .replace("\\t", "\t")
+             .replace("\\r", "\n")
+        )
+    return t
+
+
 def _parse_request_payload(text: str) -> Any:
     """
-    Intenta parsear el body tolerando varios formatos típicos cuando Bubble/API Connector
-    envía algo que no es JSON puro:
-    - JSON normal: {"a":1}
-    - JSON dentro de string: "{\"a\":1}"
-    - form-urlencoded: body=%7B%22a%22%3A1%7D
-    - dict estilo Python con comillas simples: {'a': 1}
+    Intenta parsear el body tolerando varios formatos típicos:
+    - JSON normal
+    - JSON con \n escapados fuera de strings (Bubble)
+    - JSON dentro de string
+    - form-urlencoded: body=...
+    - dict estilo Python con comillas simples
     """
     t = (text or "").strip()
     if not t:
         raise HTTPException(status_code=400, detail={"error": "Empty body"})
+
+    # 0) Fix Bubble: convertir \n literales a whitespace real (si aplica)
+    t = _maybe_unescape_whitespace(t)
 
     # 1) JSON normal
     try:
@@ -61,6 +85,7 @@ def _parse_request_payload(text: str) -> Any:
     if t.startswith("body="):
         try:
             decoded = urllib.parse.unquote_plus(t[5:])
+            decoded = _maybe_unescape_whitespace(decoded)
             return json.loads(decoded)
         except Exception:
             raise HTTPException(
@@ -79,12 +104,9 @@ def _parse_request_payload(text: str) -> Any:
 
 
 def _normalize_payload(payload: Any) -> Dict[str, Any]:
-    """
-    Normaliza el payload para garantizar que sea dict:
-    - Si viene como string, intenta json.loads.
-    - Si no es dict al final, lanza 422.
-    """
+    # Caso: viene como string que contiene JSON
     if isinstance(payload, str):
+        payload = _maybe_unescape_whitespace(payload)
         try:
             payload = json.loads(payload)
         except json.JSONDecodeError:
@@ -100,10 +122,8 @@ def _normalize_payload(payload: Any) -> Dict[str, Any]:
 
 
 def _normalize_datos_crudos(datos_crudos: Any) -> Dict[str, Any]:
-    """
-    datos_crudos puede venir como dict o como string JSON.
-    """
     if isinstance(datos_crudos, str):
+        datos_crudos = _maybe_unescape_whitespace(datos_crudos)
         try:
             datos_crudos = json.loads(datos_crudos)
         except json.JSONDecodeError:
@@ -116,27 +136,29 @@ def _normalize_datos_crudos(datos_crudos: Any) -> Dict[str, Any]:
 
 
 @app.post("/compute", response_model=ComputeResponse)
-async def compute(request: Request, x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")):
+async def compute(
+    request: Request,
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+):
     if APP_API_KEY and x_api_key != APP_API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    # Leer body crudo (evita 500 cuando request.json() falla)
     raw_bytes = await request.body()
     text = raw_bytes.decode("utf-8", errors="replace")
 
-    # Log útil en Render para diagnosticar Bubble (sin spamear todo el body)
+    # logs útiles en Render
+    print("---- /compute content-type ----")
+    print(request.headers.get("content-type"))
     print("---- /compute raw body preview ----")
     print(text.strip()[:400])
     print("---- end preview ----")
 
-    # Parse tolerante
     payload_any = _parse_request_payload(text)
     payload = _normalize_payload(payload_any)
 
     datos_crudos = _normalize_datos_crudos(payload.get("datos_crudos"))
     flags = payload.get("flags") or {}
     if not isinstance(flags, dict):
-        # si viene raro, no rompemos; lo forzamos a dict vacío
         flags = {}
 
     raw, formatted, notes = compute_financials(datos_crudos, flags)
