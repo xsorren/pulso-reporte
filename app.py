@@ -162,4 +162,11 @@ async def compute(
         flags = {}
 
     raw, formatted, notes = compute_financials(datos_crudos, flags)
-    return {"raw": raw, "formatted": formatted, "notes": notes}
+    response = {"raw": raw, "formatted": formatted, "notes": notes}
+    
+    # Print complete response
+    print("---- /compute RESPUESTA COMPLETA ----")
+    print(json.dumps(response, indent=2, ensure_ascii=False))
+    print("---- FIN RESPUESTA COMPLETA ----")
+    
+    return response
