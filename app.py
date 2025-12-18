@@ -32,6 +32,10 @@ class ComputeResponse(BaseModel):
     formatted: Dict[str, Any]
     notes: list[str] = Field(default_factory=list)
 
+    # ✅ clave para Bubble: un string con TODA la respuesta JSON (para guardar o pasar tal cual)
+    # Esto evita depender de "raw body text" (que a veces Bubble no persiste bien)
+    json_string: str
+
 
 @app.get("/health")
 def health():
@@ -40,7 +44,7 @@ def health():
 
 def _maybe_unescape_whitespace(text: str) -> str:
     """
-    Bubble a veces envía el JSON como texto con secuencias literales \n \t \r
+    Bubble a veces envía el JSON como texto con secuencias literales \\n \\t \\r
     fuera de strings, ej: {\\n "a": 1 } -> eso NO es JSON válido.
     Convertimos esas secuencias a whitespace real.
     """
@@ -63,7 +67,7 @@ def _parse_request_payload(text: str) -> Any:
     """
     Intenta parsear el body tolerando varios formatos típicos:
     - JSON normal
-    - JSON con \n escapados fuera de strings (Bubble)
+    - JSON con \\n escapados fuera de strings (Bubble)
     - JSON dentro de string
     - form-urlencoded: body=...
     - dict estilo Python con comillas simples
@@ -72,7 +76,7 @@ def _parse_request_payload(text: str) -> Any:
     if not t:
         raise HTTPException(status_code=400, detail={"error": "Empty body"})
 
-    # 0) Fix Bubble: convertir \n literales a whitespace real (si aplica)
+    # 0) Fix Bubble: convertir \\n literales a whitespace real (si aplica)
     t = _maybe_unescape_whitespace(t)
 
     # 1) JSON normal
@@ -116,7 +120,10 @@ def _normalize_payload(payload: Any) -> Dict[str, Any]:
             )
 
     if not isinstance(payload, dict):
-        raise HTTPException(status_code=422, detail="Body debe ser un objeto JSON con datos_crudos y flags")
+        raise HTTPException(
+            status_code=422,
+            detail="Body debe ser un objeto JSON con datos_crudos y flags",
+        )
 
     return payload
 
@@ -162,11 +169,20 @@ async def compute(
         flags = {}
 
     raw, formatted, notes = compute_financials(datos_crudos, flags)
-    response = {"raw": raw, "formatted": formatted, "notes": notes}
-    
+
+    base_response = {"raw": raw, "formatted": formatted, "notes": notes}
+
+    # ✅ String JSON completo para Bubble (guardar/pasar sin depender de raw body text)
+    json_string = json.dumps(base_response, ensure_ascii=False)
+
+    response = {**base_response, "json_string": json_string}
+
     # Print complete response
     print("---- /compute RESPUESTA COMPLETA ----")
     print(json.dumps(response, indent=2, ensure_ascii=False))
     print("---- FIN RESPUESTA COMPLETA ----")
-    
+    print("---- /compute json_string length ----")
+    print(len(json_string))
+    print("---- FIN json_string length ----")
+
     return response
