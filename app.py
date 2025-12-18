@@ -30,20 +30,40 @@ def health():
     return {"ok": True}
 
 
-@app.post("/compute", response_model=ComputeResponse)
-def compute(payload: ComputeRequest, x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")):
+from fastapi import FastAPI, Header, HTTPException, Request
+import json
+from typing import Any, Dict, Optional
+
+@app.post("/compute")
+async def compute(request: Request, x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")):
     if APP_API_KEY and x_api_key != APP_API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    datos_crudos_normalizado = payload.datos_crudos
-    if isinstance(datos_crudos_normalizado, str):
+    payload: Any = await request.json()
+
+    # Si Bubble manda el body como STRING: "\"{...}\""
+    if isinstance(payload, str):
         try:
-            datos_crudos_normalizado = json.loads(datos_crudos_normalizado)
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Body inválido: JSON malformado")
+
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="Body debe ser un objeto JSON")
+
+    datos_crudos = payload.get("datos_crudos")
+    flags = payload.get("flags") or {}
+
+    # Si datos_crudos viene como string, también lo soportamos:
+    if isinstance(datos_crudos, str):
+        try:
+            datos_crudos = json.loads(datos_crudos)
         except json.JSONDecodeError:
             raise HTTPException(status_code=400, detail="datos_crudos inválido: JSON malformado")
 
-    if not isinstance(datos_crudos_normalizado, dict) or not datos_crudos_normalizado:
+    if not isinstance(datos_crudos, dict) or not datos_crudos:
         raise HTTPException(status_code=400, detail="datos_crudos requerido")
 
-    raw, formatted, notes = compute_financials(datos_crudos_normalizado, payload.flags or {})
+    raw, formatted, notes = compute_financials(datos_crudos, flags)
     return {"raw": raw, "formatted": formatted, "notes": notes}
+
