@@ -212,11 +212,11 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
     credito_anual = credito_mensual * 12.0
 
     # --- 2.6 Balances ---
+    futuros_mensual_equiv = futuros_total_anual / 12.0
     balance_mensual_operativo = ingresos_globales_mensuales - egresos_globales_mensuales
     balance_total_mensual = balance_mensual_operativo - credito_mensual
     balance_total_anual = balance_total_mensual * 12.0
-    balance_global = balance_total_anual - futuros_total_anual
-
+    balance_global = balance_total_mensual - futuros_mensual_equiv
     # --- 2.7 Patrimonio y protección ---
     patrimonio_total = (
         activos_inmobiliarios
