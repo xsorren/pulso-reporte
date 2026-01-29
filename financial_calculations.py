@@ -201,6 +201,8 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
     egresos_globales_anuales = egresos_globales_mensuales * 12.0
 
     # --- 2.3 Fondo de emergencia vs ingresos ---
+    # Nota: según tu definición, este fondo viene de la pregunta directa "¿cuentas con un fondo de emergencia?"
+    # y se compara contra ingresos totales mensuales (no contra egresos).
     if ingresos_totales_mensuales <= 0:
         porc_emergencia = 0.0
         meses_cubiertos = 0.0
@@ -211,12 +213,14 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
     # --- 2.5 Crédito ---
     credito_anual = credito_mensual * 12.0
 
-    # --- 2.6 Balances ---
+    # --- 2.6 Balances (A1) ---
+    # balance_global MENSUAL = Ingresos globales mensuales - Egresos globales mensuales - Crédito mensual - (Futuros compromisos anual / 12)
     futuros_mensual_equiv = futuros_total_anual / 12.0
     balance_mensual_operativo = ingresos_globales_mensuales - egresos_globales_mensuales
     balance_total_mensual = balance_mensual_operativo - credito_mensual
     balance_total_anual = balance_total_mensual * 12.0
     balance_global = balance_total_mensual - futuros_mensual_equiv
+
     # --- 2.7 Patrimonio y protección ---
     patrimonio_total = (
         activos_inmobiliarios
@@ -226,9 +230,20 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
         + fondo_emergencia
     )
 
+    # CAMBIO PENDIENTE (Riesgo patrimonial “ideal” sin cambiar schema):
+    # 1) Excluir GMM del cálculo de protección patrimonial (no suma como “protección patrimonial” aquí).
+    # 2) Seguro de auto se considera al 100% (no 60%).
+    # 3) Cobertura se calcula sobre una "base asegurable" (se excluyen activos de desgaste rápido).
+    base_asegurable = (
+        activos_inmobiliarios
+        + inversiones
+        + sociedades_y_acciones
+        + fondo_emergencia
+    )
+
     proteccion_total = (
         seguro_vida
-        + 0.60 * valor_seguro_auto
+        + 1.00 * valor_seguro_auto
         + seguros_accidentes_personales
         + seguro_inmuebles
         + gastos_funeral
@@ -236,17 +251,24 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
         + plan_ahorro_sa
         + persona_clave_sa
         + intersocios_sa
-        + 0.02 * suma_asegurada_gmm
+        # EXCLUIDO: suma_asegurada_gmm (antes se sumaba 2%)
     )
 
-    if patrimonio_total <= 0:
+    if suma_asegurada_gmm != 0.0:
+        notes.append("Protección patrimonial: se excluyó GMM del cálculo de protección/cobertura.")
+    if valor_seguro_auto != 0.0:
+        notes.append("Protección patrimonial: seguro de auto considerado al 100% (antes 60%).")
+    if activos_desgaste_rapido != 0.0:
+        notes.append("Riesgo patrimonial: cobertura calculada sobre base asegurable (excluye activos de desgaste rápido).")
+
+    if base_asegurable <= 0:
         porc_cobertura = 0.0
     else:
-        porc_cobertura = (proteccion_total / patrimonio_total) * 100.0
+        porc_cobertura = (proteccion_total / base_asegurable) * 100.0
 
     riesgo_patrimonial_porcentaje = _clamp(100.0 - porc_cobertura, 0.0, 100.0)
 
-    # nivel riesgo por cobertura
+    # nivel riesgo por cobertura (mantenemos umbrales)
     if porc_cobertura <= 45:
         nivel_riesgo = "Alto"
     elif porc_cobertura <= 80:
