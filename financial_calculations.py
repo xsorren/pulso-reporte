@@ -200,15 +200,15 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
     egresos_globales_mensuales = egresos_variables + egresos_fijos
     egresos_globales_anuales = egresos_globales_mensuales * 12.0
 
-    # --- 2.3 Fondo de emergencia vs ingresos ---
-    # Nota: según tu definición, este fondo viene de la pregunta directa "¿cuentas con un fondo de emergencia?"
-    # y se compara contra ingresos totales mensuales (no contra egresos).
-    if ingresos_totales_mensuales <= 0:
-        porc_emergencia = 0.0
+    # --- 2.3 Fondo de emergencia (ANUAL) ---
+    # Regla: el porcentaje es anual: si el fondo cubre 12 meses de egresos => 100%.
+    # Base: egresos_globales_mensuales (egresos fijos + variables).
+    if egresos_globales_mensuales <= 0:
         meses_cubiertos = 0.0
+        porc_emergencia = 0.0
     else:
-        porc_emergencia = (fondo_emergencia / ingresos_totales_mensuales) * 100.0
-        meses_cubiertos = fondo_emergencia / ingresos_totales_mensuales
+        meses_cubiertos = fondo_emergencia / egresos_globales_mensuales
+        porc_emergencia = _clamp((meses_cubiertos / 12.0) * 100.0, 0.0, 100.0)
 
     # --- 2.5 Crédito ---
     credito_anual = credito_mensual * 12.0
@@ -292,7 +292,7 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
         },
         "balance_total": _fmt_money_es(balance_total_mensual),
         "balance_global": _fmt_money_es(balance_global),
-        "fondo_de_emergencia": f"{_fmt_percent_es(porc_emergencia)} ({_fmt_number_es(meses_cubiertos, 2)} meses de ingresos equivalentes)",
+        "fondo_de_emergencia": f"{_fmt_percent_es(porc_emergencia)} ({_fmt_number_es(meses_cubiertos, 2)} meses de egresos equivalentes)",
         "operaciones_perfil_patrimonial": {
             "patrimonio_total": _fmt_money_es(patrimonio_total),
             "proteccion_total": _fmt_money_es(proteccion_total),
