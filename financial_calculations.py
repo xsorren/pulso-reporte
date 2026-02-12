@@ -125,7 +125,7 @@ def _get(d: Dict[str, Any], *keys: str) -> float:
 
 def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any], List[str]]:
     """
-    Implementa los cálculos del prompt original, separando:
+    Implementa los cálculos del prompt original (enfoque anterior), separando:
     - raw: números puros
     - formatted: strings ya formateadas para pintar en el JSON final
     """
@@ -161,7 +161,6 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
 
     if futuros_total_anual == 0.0 and futuros_mensual != 0.0:
         futuros_total_anual = futuros_mensual * 12.0
-
     if bool(flags.get("futuros_compromisos_incluido_en_egresos")):
         if futuros_total_anual != 0:
             notes.append("futuros_compromisos_incluido_en_egresos=true: se forzó futuros_compromisos_total_anual=0 para evitar doble conteo.")
@@ -201,33 +200,31 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
     egresos_globales_mensuales = egresos_variables + egresos_fijos
     egresos_globales_anuales = egresos_globales_mensuales * 12.0
 
-    # --- 2.3 Fondo de emergencia ---
-    # meses_cubiertos: cuántos meses de EGRESOS cubre el fondo
+    # --- 2.3 Fondo de emergencia (ANUAL) ---
+    # Regla: el porcentaje es anual: si el fondo cubre 12 meses de egresos => 100%.
+    # Base: egresos_globales_mensuales (egresos fijos + variables).
     if egresos_globales_mensuales <= 0:
         meses_cubiertos = 0.0
-    else:
-        meses_cubiertos = fondo_emergencia / egresos_globales_mensuales
-
-    # porc_emergencia: porcentaje del FONDO sobre INGRESOS ANUALES (ingresos_globales_mensuales * 12)
-    # Ej: fondo=200,000; ingresos_globales_mensuales=105,000 => 200,000 / (105,000*12) = 15.87%
-    if ingresos_globales_anuales <= 0:
         porc_emergencia = 0.0
     else:
-        porc_emergencia = (fondo_emergencia / ingresos_globales_anuales) * 100.0
-        porc_emergencia = max(0.0, porc_emergencia)  # permitir >100% si aplica
+        meses_cubiertos = fondo_emergencia / egresos_globales_mensuales
+        porc_emergencia = _clamp((meses_cubiertos / 12.0) * 100.0, 0.0, 100.0)
 
     # --- 2.5 Crédito ---
     credito_anual = credito_mensual * 12.0
 
-    # --- 2.6 Balances ---
-    # balance_mensual_operativo = ingresos_globales_mensuales - egresos_globales_mensuales
-    # balance_total_mensual = balance_mensual_operativo - credito_mensual
-    # balance_global = balance_total_mensual - (futuros_total_anual / 12)
+    # --- 2.6 Balances (CORRECCIÓN) ---
+    # balance_total (MOSTRAR EN REPORTE) = excedente operativo (ingresos_globales - egresos_globales)
+    # balance_total_mensual (RAW) = excedente post-deuda (operativo - crédito mensual)
+    # balance_global = excedente post-deuda y post-compromisos futuros (operativo - crédito - futuros_equiv_mensual)
     futuros_mensual_equiv = futuros_total_anual / 12.0
+
     balance_mensual_operativo = ingresos_globales_mensuales - egresos_globales_mensuales
     balance_total_mensual = balance_mensual_operativo - credito_mensual
     balance_total_anual = balance_total_mensual * 12.0
-    balance_global = balance_total_mensual - futuros_mensual_equiv
+    balance_global = balance_mensual_operativo - credito_mensual - futuros_mensual_equiv
+
+    notes.append("Balances: balance_total muestra excedente operativo (sin crédito); balance_global descuenta crédito y compromisos futuros.")
 
     # --- 2.7 Patrimonio y protección ---
     patrimonio_total = (
@@ -238,10 +235,10 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
         + fondo_emergencia
     )
 
-    # Riesgo patrimonial (sin cambiar schema):
-    # 1) Excluir GMM del cálculo de protección patrimonial.
-    # 2) Seguro de auto al 100%.
-    # 3) Cobertura sobre base asegurable (excluye activos de desgaste rápido).
+    # CAMBIO PENDIENTE (Riesgo patrimonial “ideal” sin cambiar schema):
+    # 1) Excluir GMM del cálculo de protección patrimonial (no suma como “protección patrimonial” aquí).
+    # 2) Seguro de auto se considera al 100% (no 60%).
+    # 3) Cobertura se calcula sobre una "base asegurable" (se excluyen activos de desgaste rápido).
     base_asegurable = (
         activos_inmobiliarios
         + inversiones
@@ -276,7 +273,7 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
 
     riesgo_patrimonial_porcentaje = _clamp(100.0 - porc_cobertura, 0.0, 100.0)
 
-    # nivel riesgo por cobertura (umbral)
+    # nivel riesgo por cobertura (mantenemos umbrales)
     if porc_cobertura <= 45:
         nivel_riesgo = "Alto"
     elif porc_cobertura <= 80:
@@ -298,7 +295,8 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
             "credito_mensual": _fmt_money_es(credito_mensual),
             "credito_anual": _fmt_money_es(credito_anual),
         },
-        "balance_total": _fmt_money_es(balance_total_mensual),
+        # CORRECCIÓN: balance_total formateado = operativo (sin crédito)
+        "balance_total": _fmt_money_es(balance_mensual_operativo),
         "balance_global": _fmt_money_es(balance_global),
         "fondo_de_emergencia": f"{_fmt_percent_es(porc_emergencia)} ({_fmt_number_es(meses_cubiertos, 2)} meses de egresos equivalentes)",
         "operaciones_perfil_patrimonial": {
