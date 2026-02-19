@@ -235,15 +235,23 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
         + fondo_emergencia
     )
 
-    # CAMBIO PENDIENTE (Riesgo patrimonial “ideal” sin cambiar schema):
-    # 1) Excluir GMM del cálculo de protección patrimonial (no suma como “protección patrimonial” aquí).
-    # 2) Seguro de auto se considera al 100% (no 60%).
-    # 3) Cobertura se calcula sobre una "base asegurable" (se excluyen activos de desgaste rápido).
+    # ✅ AJUSTE RECOMENDADO (CONSISTENCIA BASE VS PROTECCIÓN)
+    # Problema original:
+    # - protección_total incluía seguro de auto
+    # - pero base_asegurable EXCLUÍA activos_desgaste_rapido (donde vive el auto)
+    # Esto podía inflar la "cobertura" (protección/base) y distorsionar riesgo.
+    #
+    # Solución:
+    # - Si contamos el seguro de auto en protección, entonces el auto debe estar en la base.
+    # - Mantenemos excluido GMM (por definición de este indicador).
+    #
+    # Nota: si en el futuro querés volver a excluir desgaste rápido, entonces también deberías excluir seguro auto.
     base_asegurable = (
         activos_inmobiliarios
         + inversiones
         + sociedades_y_acciones
         + fondo_emergencia
+        + activos_desgaste_rapido  # <-- CAMBIO: se incluye para alinear con seguro de auto
     )
 
     proteccion_total = (
@@ -264,7 +272,7 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
     if valor_seguro_auto != 0.0:
         notes.append("Protección patrimonial: seguro de auto considerado al 100% (antes 60%).")
     if activos_desgaste_rapido != 0.0:
-        notes.append("Riesgo patrimonial: cobertura calculada sobre base asegurable (excluye activos de desgaste rápido).")
+        notes.append("Riesgo patrimonial: base asegurable incluye activos de desgaste rápido para alinear con el seguro de auto.")
 
     if base_asegurable <= 0:
         porc_cobertura = 0.0
