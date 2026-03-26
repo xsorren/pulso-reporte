@@ -234,10 +234,29 @@ async def obtener_contexto(
     if openai_client is None:
         return {"contexto_pdf": "OPENAI_API_KEY no configurada. No se pueden generar embeddings para la consulta."}
 
+    # Preparar frase de búsqueda — intenta parsear el JSON crudo que envía Bubble
+    frase_busqueda = body.query
+    try:
+        query_limpia = body.query.strip().replace("\\n", "").replace('\\"', '"')
+        datos = json.loads(query_limpia)
+        datos_crudos = datos.get("datos_crudos", {})
+        tolerancia = datos_crudos.get("inversionista", {}).get("tolerancia_riesgo", "")
+        ocupacion = datos_crudos.get("personal", {}).get("ocupacion", "")
+        prioridades_list = datos_crudos.get("prioridades", [])
+        prioridad_principal = prioridades_list[0] if prioridades_list else ""
+        frase_busqueda = (
+            f"Busca información, productos específicos y beneficios de la aseguradora ideales "
+            f"para un cliente con perfil {tolerancia}, ocupación {ocupacion}, "
+            f"y cuyas prioridades principales son {prioridad_principal}."
+        )
+        print(f"Frase generada para FAISS: {frase_busqueda}")
+    except Exception as e:
+        print(f"No se pudo parsear el JSON para la query. Usando raw query. Error: {e}")
+
     # Generar embedding de la consulta
     response = openai_client.embeddings.create(
         model=EMBEDDING_MODEL,
-        input=[body.query],
+        input=[frase_busqueda],
     )
     query_vector = np.array([response.data[0].embedding], dtype="float32")
 
