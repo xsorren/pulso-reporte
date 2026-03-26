@@ -3,17 +3,48 @@ from __future__ import annotations
 import os
 import json
 import ast
+import pickle
 import urllib.parse
 from typing import Any, Dict, Optional
 
+import faiss
+import numpy as np
 from fastapi import FastAPI, Header, HTTPException, Request
+from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from financial_calculations import compute_financials
 
 APP_API_KEY = os.getenv("APP_API_KEY")  # optional simple auth
 
+# ── Cliente OpenAI ─────────────────────────────────────────────────────────
+openai_client: OpenAI | None = None
+_openai_key = os.getenv("OPENAI_API_KEY")
+if _openai_key:
+    openai_client = OpenAI(api_key=_openai_key)
+else:
+    print("⚠️  OPENAI_API_KEY no configurada. El endpoint /obtener-contexto no podrá generar embeddings.")
+
+# ── Carga de la base de conocimientos FAISS ────────────────────────────────
+INDEX_FILE = "base_conocimiento.index"
+TEXTOS_FILE = "textos.pkl"
+EMBEDDING_MODEL = "text-embedding-3-small"
+
+try:
+    faiss_index = faiss.read_index(INDEX_FILE)
+    with open(TEXTOS_FILE, "rb") as _f:
+        textos_chunks: list[str] = pickle.load(_f)
+    print(f"✅ Base de conocimientos cargada: {faiss_index.ntotal} vectores, {len(textos_chunks)} fragmentos.")
+except Exception as e:
+    faiss_index = None
+    textos_chunks = None
+    print(f"⚠️  No se pudo cargar la base de conocimientos ({e}). El endpoint /obtener-contexto devolverá un aviso.")
+
 app = FastAPI(title="Pulso Vital - Financial Calculations Service", version="1.0.0")
+
+
+class ContextRequest(BaseModel):
+    query: str = Field(..., description="Consulta para buscar en la base de conocimientos de productos de seguros")
 
 
 class ComputeRequest(BaseModel):
@@ -186,3 +217,40 @@ async def compute(
     print("---- FIN json_string length ----")
 
     return response
+
+
+@app.post("/obtener-contexto")
+async def obtener_contexto(
+    body: ContextRequest,
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+):
+    # Misma validación de seguridad que /compute
+    if APP_API_KEY and x_api_key != APP_API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    if faiss_index is None or textos_chunks is None:
+        return {"contexto_pdf": "La base de conocimientos no está disponible. Ejecuta crear_indice.py primero."}
+
+    if openai_client is None:
+        return {"contexto_pdf": "OPENAI_API_KEY no configurada. No se pueden generar embeddings para la consulta."}
+
+    # Generar embedding de la consulta
+    response = openai_client.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=[body.query],
+    )
+    query_vector = np.array([response.data[0].embedding], dtype="float32")
+
+    # Buscar los 5 fragmentos más cercanos
+    k = 5
+    distances, indices = faiss_index.search(query_vector, k)
+
+    fragmentos = []
+    for idx in indices[0]:
+        if 0 <= idx < len(textos_chunks):
+            fragmentos.append(textos_chunks[idx])
+
+    separador = "\n\n--- --- ---\n\n"
+    contexto = separador.join(fragmentos)
+
+    return {"contexto_pdf": contexto}
