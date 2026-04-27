@@ -200,15 +200,16 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
     egresos_globales_mensuales = egresos_variables + egresos_fijos
     egresos_globales_anuales = egresos_globales_mensuales * 12.0
 
-    # --- 2.3 Fondo de emergencia (ANUAL) ---
-    # Regla: el porcentaje es anual: si el fondo cubre 12 meses de egresos => 100%.
-    # Base: egresos_globales_mensuales (egresos fijos + variables).
+    # --- 2.3 Fondo de emergencia ---
     if egresos_globales_mensuales <= 0:
         meses_cubiertos = 0.0
         porc_emergencia = 0.0
     else:
         meses_cubiertos = fondo_emergencia / egresos_globales_mensuales
         porc_emergencia = _clamp((meses_cubiertos / 12.0) * 100.0, 0.0, 100.0)
+
+    # NUEVO: Fondo de emergencia recomendado (Ingresos globales mensuales x 12)
+    fondo_emergencia_recomendado = ingresos_globales_mensuales * 12.0
 
     # --- 2.5 Crédito ---
     credito_anual = credito_mensual * 12.0
@@ -234,6 +235,12 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
         + sociedades_y_acciones
         + fondo_emergencia
     )
+
+    # NUEVO: Suma asegurada recomendada (Regla de negocio: si patrimonio <= 1M -> 800k, sino 57% del patrimonio)
+    if patrimonio_total <= 1000000.0:
+        suma_asegurada_recomendada = 800000.0
+    else:
+        suma_asegurada_recomendada = patrimonio_total * 0.57
 
     # ✅ AJUSTE RECOMENDADO (CONSISTENCIA BASE VS PROTECCIÓN)
     # Problema original:
@@ -306,7 +313,8 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
         # CORRECCIÓN: balance_total formateado = operativo (sin crédito)
         "balance_total": _fmt_money_es(balance_mensual_operativo),
         "balance_global": _fmt_money_es(balance_global),
-        "fondo_de_emergencia": f"{_fmt_percent_es(porc_emergencia)} ({_fmt_number_es(meses_cubiertos, 2)} meses de egresos equivalentes)",
+        "fondo_de_emergencia": _fmt_money_es(fondo_emergencia_recomendado),
+        "suma_asegurada_recomendada": _fmt_money_es(suma_asegurada_recomendada),
         "operaciones_perfil_patrimonial": {
             "patrimonio_total": _fmt_money_es(patrimonio_total),
             "proteccion_total": _fmt_money_es(proteccion_total),
@@ -338,6 +346,8 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
         "balance_total_anual": balance_total_anual,
         "balance_global": balance_global,
         "fondo_emergencia": fondo_emergencia,
+        "fondo_emergencia_recomendado": fondo_emergencia_recomendado,
+        "suma_asegurada_recomendada": suma_asegurada_recomendada,
         "porc_emergencia": porc_emergencia,
         "meses_cubiertos": meses_cubiertos,
         "patrimonio_total": patrimonio_total,
