@@ -296,6 +296,27 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
     else:
         nivel_riesgo = "Bajo"
 
+    # --- 2.8 Gap de aseguramiento (NUEVO) ---
+    # Diferencia entre la suma asegurada recomendada (57% del patrimonio) y la protección actual.
+    # Si gap > 0: el cliente está sub-asegurado.
+    # Si excedente > 0: el cliente cubre o supera el ideal.
+    gap_aseguramiento = max(0.0, suma_asegurada_recomendada - proteccion_total)
+    proteccion_excedente = max(0.0, proteccion_total - suma_asegurada_recomendada)
+    if gap_aseguramiento > 0:
+        notes.append("Gap de aseguramiento: la protección actual está por debajo de la suma asegurada recomendada (57% del patrimonio).")
+    elif proteccion_excedente > 0:
+        notes.append("La protección actual cubre o supera la suma asegurada recomendada (57% del patrimonio).")
+
+    # --- 2.9 Estado de pirámides (NUEVO) ---
+    # Banderas booleanas para el HTML Element en Bubble (pirámide "Estrategia de 4 fases").
+    # No requieren parsing de strings desde el front-end.
+    pyramid_status = {
+        "gastos_fijos_cubiertos": balance_mensual_operativo >= 0,
+        "fondo_emergencia_ok": meses_cubiertos >= 3,
+        "largo_plazo_ok": inversiones > 0,
+        "ir_ok": sociedades_y_acciones > 0,
+    }
+
     # --- Formateo ---
     formatted = {
         "operacion_final": {
@@ -314,7 +335,11 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
         "balance_total": _fmt_money_es(balance_mensual_operativo),
         "balance_global": _fmt_money_es(balance_global),
         "fondo_de_emergencia": _fmt_money_es(fondo_emergencia_recomendado),
+        "fondo_emergencia_actual": _fmt_money_es(fondo_emergencia),
+        "meses_cubiertos": f"{_fmt_number_es(meses_cubiertos, 1)} meses",
         "suma_asegurada_recomendada": _fmt_money_es(suma_asegurada_recomendada),
+        "gap_aseguramiento": _fmt_money_es(gap_aseguramiento),
+        "proteccion_excedente": _fmt_money_es(proteccion_excedente),
         "operaciones_perfil_patrimonial": {
             "patrimonio_total": _fmt_money_es(patrimonio_total),
             "proteccion_total": _fmt_money_es(proteccion_total),
@@ -325,6 +350,7 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
             "inversiones": _fmt_money_es(inversiones),
             "sociedades_y_acciones": _fmt_money_es(sociedades_y_acciones),
         },
+        "pyramid_status": pyramid_status,
     }
 
     raw = {
@@ -348,6 +374,8 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
         "fondo_emergencia": fondo_emergencia,
         "fondo_emergencia_recomendado": fondo_emergencia_recomendado,
         "suma_asegurada_recomendada": suma_asegurada_recomendada,
+        "gap_aseguramiento": gap_aseguramiento,
+        "proteccion_excedente": proteccion_excedente,
         "porc_emergencia": porc_emergencia,
         "meses_cubiertos": meses_cubiertos,
         "patrimonio_total": patrimonio_total,
@@ -355,6 +383,7 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
         "porc_cobertura": porc_cobertura,
         "riesgo_patrimonial_porcentaje": riesgo_patrimonial_porcentaje,
         "nivel_riesgo_patrimonial": nivel_riesgo,
+        "pyramid_status": pyramid_status,
     }
 
     return raw, formatted, notes
