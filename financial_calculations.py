@@ -200,16 +200,22 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
     egresos_globales_mensuales = egresos_variables + egresos_fijos
     egresos_globales_anuales = egresos_globales_mensuales * 12.0
 
-    # --- 2.3 Fondo de emergencia ---
-    if egresos_globales_mensuales <= 0:
+    # --- 2.3 Fondo de emergencia (BASE: INGRESOS GLOBALES) ---
+    # meses_cubiertos mide cuántos meses de INGRESOS globales cubre el fondo actual,
+    # para ser consistente con la meta recomendada (12 meses de ingresos).
+    if ingresos_globales_mensuales <= 0:
         meses_cubiertos = 0.0
         porc_emergencia = 0.0
     else:
-        meses_cubiertos = fondo_emergencia / egresos_globales_mensuales
+        meses_cubiertos = fondo_emergencia / ingresos_globales_mensuales
         porc_emergencia = _clamp((meses_cubiertos / 12.0) * 100.0, 0.0, 100.0)
 
-    # NUEVO: Fondo de emergencia recomendado (Ingresos globales mensuales x 12)
+    # Fondo de emergencia recomendado = 12 meses de INGRESOS globales mensuales
     fondo_emergencia_recomendado = ingresos_globales_mensuales * 12.0
+    notes.append(
+        "Fondo de emergencia: meses_cubiertos y meta se calculan sobre INGRESOS "
+        "globales (no egresos), consistente con la meta de 12 meses de ingresos."
+    )
 
     # --- 2.5 Crédito ---
     credito_anual = credito_mensual * 12.0
@@ -236,11 +242,16 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
         + fondo_emergencia
     )
 
-    # NUEVO: Suma asegurada recomendada (Regla de negocio: si patrimonio <= 1M -> 800k, sino 57% del patrimonio)
-    if patrimonio_total <= 1000000.0:
-        suma_asegurada_recomendada = 800000.0
-    else:
-        suma_asegurada_recomendada = patrimonio_total * 0.57
+    # Suma asegurada recomendada = 57% del patrimonio total.
+    # Regla CONSISTENTE: SIEMPRE 57% del patrimonio (sin piso fijo de 800k).
+    # Esto garantiza que la afirmación "representa el 57% del patrimonio" sea
+    # SIEMPRE verdadera en el reporte (antes, para patrimonio <= 1M se forzaba
+    # un valor fijo de 800.000 que rompía esa afirmación).
+    suma_asegurada_recomendada = patrimonio_total * 0.57
+    notes.append(
+        "Suma asegurada recomendada: 57% del patrimonio total (regla única, "
+        "sin piso fijo). El monto SIEMPRE equivale al 57% del patrimonio."
+    )
 
     # ✅ AJUSTE RECOMENDADO (CONSISTENCIA BASE VS PROTECCIÓN)
     # Problema original:
@@ -288,13 +299,20 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
 
     riesgo_patrimonial_porcentaje = _clamp(100.0 - porc_cobertura, 0.0, 100.0)
 
-    # nivel riesgo por cobertura (mantenemos umbrales)
-    if porc_cobertura <= 45:
+    # Nivel de riesgo por cobertura, alineado con la UI y la suma asegurada ideal (57%).
+    # <= 35%      -> Alto
+    # 35% - 57%   -> Moderado
+    # > 57%       -> Bajo  (57% = nivel ideal = suma asegurada recomendada / patrimonio)
+    if porc_cobertura <= 35:
         nivel_riesgo = "Alto"
-    elif porc_cobertura <= 80:
+    elif porc_cobertura <= 57:
         nivel_riesgo = "Moderado"
     else:
         nivel_riesgo = "Bajo"
+    notes.append(
+        "Nivel de riesgo patrimonial: umbrales alineados con la UI y la suma "
+        "asegurada ideal (Alto <=35%, Moderado 35-57%, Bajo >57% de cobertura)."
+    )
 
     # --- 2.8 Gap de aseguramiento (NUEVO) ---
     # Diferencia entre la suma asegurada recomendada (57% del patrimonio) y la protección actual.
