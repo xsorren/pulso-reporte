@@ -6,7 +6,7 @@ import math
 import re
 
 
-FUTUROS_COMPROMISOS_DESC = "Compromisos futuros anualizados según lo declarado"
+FUTUROS_COMPROMISOS_DESC = "Compromisos futuros mensuales según lo declarado"
 
 
 def _parse_numeric_fragment(fragment: str) -> float:
@@ -345,7 +345,8 @@ def compute_financials(datos_crudos: Dict[str, Any], flags: Dict[str, Any]) -> T
             "ingresos_globales": _fmt_money_es(ingresos_globales_mensuales),
             "egresos_globales": _fmt_money_es(egresos_globales_mensuales),
             "futuros_compromisos": FUTUROS_COMPROMISOS_DESC,
-            "futuros_compromisos_total": f"{_fmt_money_es(futuros_total_anual)} (anual)",
+            # Se muestra el equivalente MENSUAL (futuros_total_anual / 12), no el anualizado.
+            "futuros_compromisos_total": f"{_fmt_money_es(futuros_mensual_equiv)} (mensual)",
             "credito_mensual": _fmt_money_es(credito_mensual),
             "credito_anual": _fmt_money_es(credito_anual),
         },
